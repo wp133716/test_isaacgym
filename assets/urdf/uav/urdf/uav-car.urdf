@@ -1,0 +1,24 @@
+<robot name="011_banana">
+  <link name="011_banana_link">
+    <inertial>
+      <origin xyz="0 0 0" />
+      <mass value="0.411" />
+      <inertia  ixx="1.0" ixy="0.0"  ixz="0.0"  iyy="1.0"  iyz="0.0"  izz="1.0" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="/home/user/Downloads/3d_models/uav_car/uav_car.obj" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="/home/user/Downloads/3d_models//uav_car/uav_car.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <gazebo reference="011_banana">
+    <material>Gazebo/Red</material>
+  </gazebo>
+</robot>
