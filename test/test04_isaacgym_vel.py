@@ -13,9 +13,12 @@ import cv2
 import numpy as np
 import time
 
-from controller3 import cclvf as cal_vel
+import sys
+#将当前工作区路径的上一级路径加入到系统路径中
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.controller3 import cclvf as cal_vel
 
-from controller3 import euler2quat, quat2euler, CameraController
+from common.controller3 import euler2quat, quat2euler, CameraController
 
 def print_asset_info(asset, name):
     print("======== Asset info %s: ========" % (name))

@@ -1,6 +1,6 @@
 import random
 import math
-from math import pi, cos, sin, atan, atan2, asin
+# from math import pi, cos, sin, atan, atan2, asin
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
@@ -12,10 +12,20 @@ import torch
 import cv2
 import numpy as np
 import time
+import matplotlib.pyplot as plt
 
-from controller3 import cclvf as cal_vel
+from scipy.spatial.transform import Rotation as R
 
-from controller3 import euler2quat, quat2euler, CameraController
+import sys
+#将当前工作区路径的上一级路径加入到系统路径中
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.controller4 import cclvf2 as cal_vel
+
+from common.controller4 import euler2quat, quat2euler, CameraController
+from common.controller4 import euler2quaternion, quaternion2euler
+
+torch.set_printoptions(precision=4, threshold=10, edgeitems=10, linewidth=80, profile=None, sci_mode=False)
+np.set_printoptions(edgeitems=30, infstr='inf', linewidth=4000, nanstr='nan', precision=4, suppress=True, threshold=10, formatter=None)
 
 def print_asset_info(asset, name):
     print("======== Asset info %s: ========" % (name))
@@ -137,6 +147,36 @@ def init_sim_params():
 
     return sim_params
 
+def init_camera(self):
+        self.gym.refresh_actor_root_state_tensor(self.sim)
+        self._cam_prev_char_pos = self._root_states[0, 0:3].cpu().numpy()
+        
+        cam_pos = gymapi.Vec3(self._cam_prev_char_pos[0], 
+                              self._cam_prev_char_pos[1] - 3.0, 
+                              1.0)
+        cam_target = gymapi.Vec3(self._cam_prev_char_pos[0],
+                                 self._cam_prev_char_pos[1],
+                                 1.0)
+        self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
+        return
+
+def update_camera(self):
+        self.gym.refresh_actor_root_state_tensor(self.sim)
+        char_root_pos = self._root_states[0, 0:3].cpu().numpy()
+        
+        cam_trans = self.gym.get_viewer_camera_transform(self.viewer, None)
+        cam_pos = np.array([cam_trans.p.x, cam_trans.p.y, cam_trans.p.z])
+        cam_delta = cam_pos - self._cam_prev_char_pos
+
+        new_cam_target = gymapi.Vec3(char_root_pos[0], char_root_pos[1], 1.0)
+        new_cam_pos = gymapi.Vec3(char_root_pos[0] + cam_delta[0], 
+                                  char_root_pos[1] + cam_delta[1], 
+                                  cam_pos[2])
+
+        self.gym.viewer_camera_look_at(self.viewer, None, new_cam_pos, new_cam_target)
+
+        self._cam_prev_char_pos[:] = char_root_pos
+        return
 
 gym = gymapi.acquire_gym()
 
@@ -145,6 +185,7 @@ sim_params = init_sim_params()
 # create sim with these parameters
 # sim = gym.create_sim(0, 0, gymapi.SIM_PHYSX, sim_params)
 args = gymutil.parse_arguments(description="Asset and Environment Information")
+print(args)
 sim = gym.create_sim(args.compute_device_id, args.graphics_device_id, args.physics_engine, sim_params)
 
 if sim is None:
@@ -160,10 +201,10 @@ if viewer is None:
 # configure the ground plane
 plane_params = gymapi.PlaneParams()
 plane_params.normal = gymapi.Vec3(0, 0, 1) # z-up!
-plane_params.distance = 0
-plane_params.static_friction = 1
-plane_params.dynamic_friction = 1
-plane_params.restitution = 0
+plane_params.distance = 0 # Ground plane distance from origin
+plane_params.static_friction = 1 # Coefficient of dynamic friction
+plane_params.dynamic_friction = 1 # Coefficient of static friction
+plane_params.restitution = 0 # Coefficient of restitution
 
 # create the ground plane
 gym.add_ground(sim, plane_params)
@@ -203,7 +244,7 @@ for i in range(len(loaded_assets)):
 
 
 # set up the env grid
-num_envs = 2
+num_envs = 1
 envs_per_row = int(math.sqrt(num_envs))
 env_spacing = 20.0
 env_lower = gymapi.Vec3(-env_spacing, -env_spacing, -env_spacing)
@@ -213,7 +254,7 @@ env_upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
 # Create an wireframe axis
 axes_geom = gymutil.AxesGeometry(scale=5)
 # Create a wireframe sphere
-sphere_rot = gymapi.Quat.from_euler_zyx(0.5 * pi, 0, 0)
+sphere_rot = gymapi.Quat.from_euler_zyx(0.5 * np.pi, 0, 0)
 sphere_pose = gymapi.Transform(r=sphere_rot)
 sphere_geom = gymutil.WireframeSphereGeometry(radius=0.5, num_lats=12, num_lons=12, pose=sphere_pose, color=(1, 1, 0))
 
@@ -227,6 +268,7 @@ camera_handles = []
 # cam_pos = gymapi.Vec3(0.0, 0.0, 0.0)
 # cam_target = gymapi.Vec3(0.0, 0.0, -1.0)
 cam_props = gymapi.CameraProperties()
+print("======== CameraProperties : ========")
 print("cam_props width          : ", cam_props.width)
 print("cam_props height         : ", cam_props.height)
 print("horizontal_fov           : ", cam_props.horizontal_fov)
@@ -243,9 +285,10 @@ vertical_fov = height/width * horizontal_fov
 焦距: focal(mm) = width(sensor width) / (2*tan(horizontal_fov / 2))
 视野/相机传感器尺寸大小 = 工作距离/焦距
 '''
-# cam_props.horizontal_fov = 90 # horizontal field of view in radians. The vertical field of view will be height/width * horizontal_fov
+cam_props.horizontal_fov = 90 # horizontal field of view in radians. The vertical field of view will be height/width * horizontal_fov
 # cam_props.width = 360
 # cam_props.height = 360
+cam_props.enable_tensors = True
 
 # create and populate the environments
 for i in range(num_envs):
@@ -262,13 +305,13 @@ for i in range(num_envs):
     uav_pose = gymapi.Transform()
     car_pose = gymapi.Transform()
 
-    uav_pose.p = gymapi.Vec3(0., 0., height+10.)
+    uav_pose.p = gymapi.Vec3(-10., 0., height+100)
     # pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
-    # uav_pose.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(1, 0, 0), pi/2)
+    # uav_pose.r = gymapi.Quat.from_euler_zyx(0, 0, np.pi/2)
     uav_actor_handle = gym.create_actor(env=env, asset=loaded_assets[0], pose=uav_pose, name=asset_names[0]+str(i), group=i, filter=-1)
     uav_actor_handles.append(uav_actor_handle)
     
-    car_pose.p = gymapi.Vec3(0., 2., height)
+    car_pose.p = gymapi.Vec3(0., 0., height)
     # pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
     # car_pose.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(1, 0, 0), pi/2)
     car_actor_handle = gym.create_actor(env, loaded_assets[1], car_pose, asset_names[1]+str(i), i, -1)
@@ -284,17 +327,18 @@ for i in range(num_envs):
     # transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(45.0))
     # gym.set_camera_transform(camera_handle, env, transform)
     local_transform = gymapi.Transform()
-    local_transform.p = gymapi.Vec3(5, 0, 20)
+    local_transform.p = gymapi.Vec3(5, 0, 0) # 相机相对飞机的位置
     # local_transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(90.0))
+    local_transform.r = gymapi.Quat.from_euler_zyx(0, 0, 0)
     # local_transform.r = gymapi.Quat(*euler2quat([0., 0, pi/2]))
-    local_transform.r = gymapi.Quat(*euler2quat([0., 0, 0]))
+    # local_transform.r = gymapi.Quat(*euler2quat([0., 0., 0.]))
     # gym.set_camera_transform(camera_handle, env, local_transform)
-    gym.attach_camera_to_body(camera_handle, env, body, local_transform, gymapi.FOLLOW_TRANSFORM)
+    gym.attach_camera_to_body(camera_handle, env, body, local_transform, gymapi.FOLLOW_TRANSFORM) # gymapi.FOLLOW_TRANSFORM
 
 # position viewer camera
 # gym.viewer_camera_look_at(viewer, None, cam_pos, cam_target)
 
-print("=== Environment info: ================================================")
+print("========================= Environment info: =========================")
 
 actor_count = gym.get_actor_count(env)
 print("%d actors total" % actor_count)
@@ -306,15 +350,17 @@ for i in range(actor_count):
 
 num_bodies = gym.get_asset_rigid_body_count(loaded_assets[0])
 # print('num_bodies', num_bodies)
-
 # print("camera_handles : ", camera_handles)
 # print("camera_handles : ", len(camera_handles))
 # print("camera_handles : ", camera_handles[0].id==camera_handle)
-
 num_image = 0
-move = True#False#
+move = False#False#
 once = True
 cam_control = CameraController()
+
+fig, axes = plt.subplots(1, 1, figsize=(16, 9))
+cv2.namedWindow("isaac gym", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("isaac gym", cam_props.width, cam_props.height)
 
 while not gym.query_viewer_has_closed(viewer):
     num_image += 1
@@ -323,7 +369,6 @@ while not gym.query_viewer_has_closed(viewer):
     gym.simulate(sim)
     gym.fetch_results(sim, True)
 
-    
     # update the viewer
     gym.step_graphics(sim)
     gym.draw_viewer(viewer, sim, True)
@@ -334,77 +379,103 @@ while not gym.query_viewer_has_closed(viewer):
     # Wait for dt to elapse in real time.
     # This synchronizes the physics simulation with the rendering rate.
     gym.sync_frame_time(sim)
-    
-    # for i in range(num_envs):
-    # state_buffer = gym.acquire_rigid_body_state_tensor(sim)
-    # state_buffer = gymtorch.wrap_tensor(state_buffer)
-    # print("@@@@@@@ state_buffer :\n ", state_buffer)
-    # assert False
-    if move:
-        '''car'''
-        # car_body_states = gym.get_actor_rigid_body_states(envs[0], car_actor_handles[0], gymapi.STATE_ALL)
-        # car_orientations = car_body_states["pose"]['r'][0]
-        # car_positions = car_body_states["pose"]['p'][0]
-        # # car_vel_linear = car_body_states['vel']['linear'][0]
-        # # car_vel_angular = car_body_states['vel']['angular'][0]
-
-        # car_positions = np.array(list(car_positions))
-        # car_order_vel = cal_vel(car_positions, np.array([0, 0]), 10, 10)
-        # roll = 0.
-        # pitch = 0.
-        # yaw = atan2(car_order_vel[1], car_order_vel[0])
-        # car_euler_angle = [roll, pitch, yaw]
-        # car_quat = euler2quat(car_euler_angle)
-        # # car_body_states['pose']['r'].fill((car_quat[0], car_quat[1], car_quat[2], car_quat[3]))
-        # # car_body_states['vel']['linear'].fill((car_order_vel[0], car_order_vel[1], 0))
-        # # gym.set_actor_rigid_body_states(envs[0],
-        # #                                 gym.get_rigid_handle(envs[0], gym.get_actor_name(envs[0], car_actor_handles[0]), gym.get_actor_rigid_body_names(envs[0], car_actor_handles[0])[0]),
-        # #                                 car_body_states, gymapi.STATE_ALL)
-
-        state_buffer = gym.acquire_rigid_body_state_tensor(sim)
-        state_buffer = gymtorch.wrap_tensor(state_buffer)
-        gym.refresh_actor_root_state_tensor(sim)
-        gym.refresh_rigid_body_state_tensor(sim)
-        gym.refresh_dof_state_tensor(sim)
-        torch.set_printoptions(precision=4, threshold=100, edgeitems=3, linewidth=80, profile=None, sci_mode=False)
-        # car_body_states = gym.get_actor_rigid_body_states(envs[0], car_actor_handles[0], gymapi.STATE_ALL)
-        # uav_body_states = gym.get_actor_rigid_body_states(envs[0], uav_actor_handles[0], gymapi.STATE_ALL)
-
-        print("@@@@@@@ state_buffer :\n ", state_buffer)
-        # print("@@@@@@@ uav_body_states :\n ", uav_body_states)
-        # print("@@@@@@@ car_body_states [pose][p] :\n ", car_body_states["pose"]['p'])
-        # print("@@@@@@@ car_body_states [pose][r] :\n ", car_body_states["pose"]['r'])
-        # print("@@@@@@@ car_body_states [vel][linear] :\n ", car_body_states['vel']['linear'])
-        # print("@@@@@@@ car_body_states [vel][angular] :\n ", car_body_states['vel']['angular'])
-        # assert False
-        state_buffer[0][7:9] = torch.tensor([10, 0])
-        state_buffer[1][7:9] = torch.tensor([0, 10])
-        print(gym.set_rigid_body_state_tensor(sim, gymtorch.unwrap_tensor(state_buffer)))
-
-    # move = False
-
-    # randomize sensor camera position
-    # y_offset = random.uniform(-1.0, 1.0)
-    # z_offset = random.uniform(-1.0, 1.0)
-    # cam_pos_new = cam_pos + gymapi.Vec3(0., y_offset, z_offset)
-    # gym.set_camera_location(camera_handles[i], env, cam_pos_new, cam_target)
-
-    # randomize light parameters
-    # l_color = gymapi.Vec3(random.uniform(1, 1), random.uniform(1, 1), random.uniform(1, 1))
-    # l_ambient = gymapi.Vec3(random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
-    # l_direction = gymapi.Vec3(random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
-    # gym.set_light_parameters(sim, 0, l_color, l_ambient, l_direction)
-
-    # gym.write_camera_image_to_file(sim, envs[i], camera_handles[i], gymapi.IMAGE_COLOR, "images/image_"+str(num_image)+".png")
-    color_image = gym.get_camera_image(sim, envs[0], camera_handles[0], gymapi.IMAGE_COLOR)
-    color_image = color_image.reshape(cam_props.height, cam_props.width, 4)
-    cv2.imshow('isaac gym {}'.format(0), color_image)
-    cv2.waitKey(1)
 
     gym.refresh_actor_root_state_tensor(sim)
     gym.refresh_rigid_body_state_tensor(sim)
     gym.refresh_dof_state_tensor(sim)
     
+    # t = gym.get_elapsed_time(sim)
+    # t2 = time.time()
+    state_buffer = gymtorch.wrap_tensor(gym.acquire_actor_root_state_tensor(sim))
+    # print(f"time : {(gym.get_elapsed_time(sim)-t)*1000} ms")
+    # print(f"time2 : {(time.time()-t2)*1000} ms")
+    car_pos_batch = state_buffer[1::2, :3].view(-1, 3)
+    uav_pos_batch = state_buffer[::2, :3].view(-1, 3)
 
+    car_order_vel = cal_vel(car_pos_batch, target_pos=torch.ones_like(car_pos_batch), speed=50, radius=30)
+    yaw = torch.atan2(car_order_vel[:,1], car_order_vel[:,0])
+    euler_buffer = torch.zeros(num_envs, 3)
+    euler_buffer[:, 2] = yaw
+    car_quat = euler2quaternion(euler_buffer)
+
+    uav_target_pos = car_pos_batch.clone()
+    uav_target_pos[:, 2] = 60
+    uav_order_vel = cal_vel(uav_pos_batch, target_pos=uav_target_pos, speed=50, radius=50)
+    yaw = torch.atan2(uav_order_vel[:,1], uav_order_vel[:,0])
+    euler_buffer = torch.zeros(num_envs, 3)
+    # euler_buffer[:, 2] = yaw
+    euler_buffer[:, 0] = np.deg2rad(10)
+    euler_buffer[:, 1] = np.deg2rad(90)
+    euler_buffer[:, 2] = np.deg2rad(60)
+    uav_quat = euler2quaternion(euler_buffer)
+
+    print("$$$$$$$$$$$$$ uav_order_vel :\n ", uav_order_vel)
+    # print("$$$$$$$$$$$$$ state_buffer :\n ", state_buffer)
+    state_buffer[0::2, 3:7] = torch.tensor(uav_quat) #torch.tensor(R.from_euler('xyz', [num_image, 0, 0], degrees=True).as_quat()) # uav quat
+    state_buffer[0::2, 7:10] = uav_order_vel #torch.tensor([1, 1, 0]) # uav vel
+    state_buffer[1::2, 3:7] = torch.tensor(car_quat) # car quat
+    state_buffer[1::2, 7:10] = car_order_vel # car vel
+    # state_buffer[0::2, 9] = 0 # uav vel z
+    print(gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(state_buffer)))
+    projection_matrix = np.matrix(gym.get_camera_proj_matrix(sim, env, camera_handle))
+    view_matrix = np.matrix(gym.get_camera_view_matrix(sim, env, camera_handle))
+    print("projection_matrix : \n", projection_matrix)
+    print("view_matrix : \n", view_matrix)
+    # assert False
+
+    for i in range(num_envs):
+        ### camera
+        camera_states = gym.get_camera_transform(sim, envs[i], camera_handles[i])
+        print("state_buffer : \n", state_buffer)
+        print("camera_states : ", camera_states)
+        print("camera_states pose r : ", camera_states.r)
+        print("camera_states pose euler : ", np.rad2deg(camera_states.r.to_euler_zyx()))
+        print("camera_states pose p: ", camera_states.p)
+        # print("camera_states vel : ", camera_states['vel']['linear'])
+        # print("camera_states : ", camera_states['vel']['angular'])
+        # cam_orientations = camera_states.r
+        # cam_positions = camera_states.p
+        # cam_angle = np.rad2deg(quat2euler(cam_orientations))
+        # cam_order_angle = [np.radians(num_image), np.radians(0), np.radians(0)]
+        # cam_quat = euler2quat(cam_order_angle)
+        
+        # transform = gymapi.Transform()
+        # camera_states.r = gymapi.Quat.from_euler_zyx(0, np.deg2rad(90), 0)
+        # camera_states.p = gymapi.Vec3(state_buffer[0, 0]+5, state_buffer[0, 1], state_buffer[0, 2])
+        # gym.set_camera_transform(camera_handles[i], envs[i], camera_states)
+        cam_angle = camera_states.r.to_euler_zyx()
+        # cam_angle = camera_states.r
+        uav_angle = R.from_quat(state_buffer[0][3:7]).as_euler('zyx', degrees=False)
+        uav_positions = state_buffer[0][:3]
+        car_positions = state_buffer[1][:3]
+        # uav_positions[0], uav_positions[1] = uav_positions[1], uav_positions[0]
+        # car_positions[0], car_positions[1] = car_positions[1], car_positions[0]
+        # print("cam_angle : ", np.rad2deg(cam_angle))
+        print("uav_angle : ", np.rad2deg(uav_angle))
+        print("uav_positions : ", uav_positions)
+        print("car_positions : ", car_positions)
+        cam_control.set_params(cam_angle, uav_angle, uav_positions, car_positions, 0, 1)
+        print("cam_control camera_matrix : \n", cam_control.camera_matrix)
+        # print("camera_proj_matrix : \n", gym.get_camera_proj_matrix(sim, envs[i], 0))
+        # camera_view_matrix = gym.get_camera_view_matrix(sim, envs[i], 0)
+        # print("camera_view_matrix : \n", camera_view_matrix)
+
+
+        pixel_point = cam_control.world2pixel()
+        # pixel_point = pixel_point[::-1]
+        print("pixel_point : ", pixel_point)
+        # pixel_point[0] = cam_props.width - pixel_point[0]
+        # pixel_point = np.clip(pixel_point[:2], [0, 0], [cam_props.height, cam_props.width])
+
+        color_image = gym.get_camera_image(sim, envs[i], camera_handles[i], gymapi.IMAGE_COLOR)
+        color_image = color_image.reshape(cam_props.height, cam_props.width, 4)
+        
+        r, g, b, _ = cv2.split(color_image)
+        color_image = cv2.merge([b, g, r]) # cv2 读取图片格式为BGR
+        cv2.rectangle(color_image, (int(pixel_point[0]-10), int(pixel_point[1]+10)), (int(pixel_point[0]+10), int(pixel_point[1]-10)), (0,255,0), 4)
+        cv2.imshow('isaac gym', color_image)
+        # cv2.imshow('isaac gym {}'.format(i), color_image[:,:,::-1])
+        cv2.waitKey(1)
+    
 gym.destroy_viewer(viewer)
 gym.destroy_sim(sim)

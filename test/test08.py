@@ -16,10 +16,13 @@ import matplotlib.pyplot as plt
 
 from scipy.spatial.transform import Rotation as R
 
-from controller5 import cclvf2 as cal_vel
+import sys
+#将当前工作区路径的上一级路径加入到系统路径中
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.controller5 import cclvf2 as cal_vel
 
-from controller5 import euler2quat, quat2euler, CameraController
-from controller5 import euler2quaternion, quaternion2euler
+from common.controller5 import euler2quat, quat2euler, CameraController
+from common.controller5 import euler2quaternion, quaternion2euler
 
 torch.set_printoptions(precision=4, threshold=10, edgeitems=10, linewidth=80, profile=None, sci_mode=False)
 np.set_printoptions(edgeitems=30, infstr='inf', linewidth=4000, nanstr='nan', precision=4, suppress=True, threshold=10, formatter=None)
@@ -190,7 +193,7 @@ if sim is None:
     quit()
 
 # Create viewer
-viewer = None #gym.create_viewer(sim, gymapi.CameraProperties())
+viewer = gym.create_viewer(sim, gymapi.CameraProperties())
 if viewer is None:
     print("*** Failed to create viewer")
     # quit()

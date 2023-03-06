@@ -16,10 +16,8 @@ import matplotlib.pyplot as plt
 
 from scipy.spatial.transform import Rotation as R
 
-from controller4 import cclvf2 as cal_vel
-
-from controller4 import euler2quat, quat2euler, CameraController
-from controller4 import euler2quaternion, quaternion2euler
+from common.servo_controller import CameraController, euler2quaternion, quaternion2euler
+from common.servo_controller import cclvf2 as cal_vel
 
 torch.set_printoptions(precision=4, threshold=10, edgeitems=10, linewidth=80, profile=None, sci_mode=False)
 np.set_printoptions(edgeitems=30, infstr='inf', linewidth=4000, nanstr='nan', precision=4, suppress=True, threshold=10, formatter=None)
@@ -193,7 +191,7 @@ if sim is None:
 viewer = gym.create_viewer(sim, gymapi.CameraProperties())
 if viewer is None:
     print("*** Failed to create viewer")
-    quit()
+    # quit()
 
 # configure the ground plane
 plane_params = gymapi.PlaneParams()
@@ -275,6 +273,20 @@ print("supersampling_horizontal : ", cam_props.supersampling_horizontal)
 print("supersampling_vertical   : ", cam_props.supersampling_vertical)
 print("use_collision_geometry   : ", cam_props.use_collision_geometry)
 print("enable_tensors           : ", cam_props.enable_tensors)
+cam_props.horizontal_fov = 90 # horizontal field of view in radians. The vertical field of view will be height/width * horizontal_fov
+cam_props.width = 1600
+cam_props.height = 900
+cam_props.enable_tensors = True
+print("======== CameraProperties : ========")
+print("cam_props width          : ", cam_props.width)
+print("cam_props height         : ", cam_props.height)
+print("horizontal_fov           : ", cam_props.horizontal_fov)
+print("near_plane               : ", cam_props.near_plane)
+print("far_plane                : ", cam_props.far_plane)
+print("supersampling_horizontal : ", cam_props.supersampling_horizontal)
+print("supersampling_vertical   : ", cam_props.supersampling_vertical)
+print("use_collision_geometry   : ", cam_props.use_collision_geometry)
+print("enable_tensors           : ", cam_props.enable_tensors)
 '''
 vertical_fov = height/width * horizontal_fov
 水平FOV: horizontal_fov = 2 * atan(0.5*width(sensor width) / focal(mm))
@@ -282,10 +294,6 @@ vertical_fov = height/width * horizontal_fov
 焦距: focal(mm) = width(sensor width) / (2*tan(horizontal_fov / 2))
 视野/相机传感器尺寸大小 = 工作距离/焦距
 '''
-cam_props.horizontal_fov = 90 # horizontal field of view in radians. The vertical field of view will be height/width * horizontal_fov
-# cam_props.width = 360
-# cam_props.height = 360
-cam_props.enable_tensors = True
 
 # create and populate the environments
 for i in range(num_envs):
@@ -353,7 +361,7 @@ num_bodies = gym.get_asset_rigid_body_count(loaded_assets[0])
 num_image = 0
 move = False#False#
 once = True
-cam_control = CameraController()
+cam_control = CameraController(cam_props)
 
 fig, axes = plt.subplots(1, 1, figsize=(16, 9))
 cv2.namedWindow("isaac gym", cv2.WINDOW_NORMAL)
@@ -396,13 +404,13 @@ while not gym.query_viewer_has_closed(viewer):
     car_quat = euler2quaternion(euler_buffer)
 
     uav_target_pos = car_pos_batch.clone()
-    uav_target_pos[:, 2] = 60
+    uav_target_pos[:, 2] = 260 # height
     uav_order_vel = cal_vel(uav_pos_batch, target_pos=uav_target_pos, speed=50, radius=50)
     yaw = torch.atan2(uav_order_vel[:,1], uav_order_vel[:,0])
     euler_buffer = torch.zeros(num_envs, 3)
     # euler_buffer[:, 2] = yaw
     euler_buffer[:, 0] = np.deg2rad(10)
-    euler_buffer[:, 1] = np.deg2rad(90)
+    euler_buffer[:, 1] = np.deg2rad(88)
     euler_buffer[:, 2] = np.deg2rad(60)
     uav_quat = euler2quaternion(euler_buffer)
 
@@ -414,11 +422,6 @@ while not gym.query_viewer_has_closed(viewer):
     state_buffer[1::2, 7:10] = car_order_vel # car vel
     # state_buffer[0::2, 9] = 0 # uav vel z
     print(gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(state_buffer)))
-    projection_matrix = np.matrix(gym.get_camera_proj_matrix(sim, env, camera_handle))
-    view_matrix = np.matrix(gym.get_camera_view_matrix(sim, env, camera_handle))
-    print("projection_matrix : \n", projection_matrix)
-    print("view_matrix : \n", view_matrix)
-    # assert False
 
     for i in range(num_envs):
         ### camera
@@ -428,41 +431,26 @@ while not gym.query_viewer_has_closed(viewer):
         print("camera_states pose r : ", camera_states.r)
         print("camera_states pose euler : ", np.rad2deg(camera_states.r.to_euler_zyx()))
         print("camera_states pose p: ", camera_states.p)
-        # print("camera_states vel : ", camera_states['vel']['linear'])
-        # print("camera_states : ", camera_states['vel']['angular'])
-        # cam_orientations = camera_states.r
-        # cam_positions = camera_states.p
-        # cam_angle = np.rad2deg(quat2euler(cam_orientations))
-        # cam_order_angle = [np.radians(num_image), np.radians(0), np.radians(0)]
-        # cam_quat = euler2quat(cam_order_angle)
-        
-        # transform = gymapi.Transform()
-        # camera_states.r = gymapi.Quat.from_euler_zyx(0, np.deg2rad(90), 0)
-        # camera_states.p = gymapi.Vec3(state_buffer[0, 0]+5, state_buffer[0, 1], state_buffer[0, 2])
-        # gym.set_camera_transform(camera_handles[i], envs[i], camera_states)
+
+        proj_matrix = np.matrix(gym.get_camera_proj_matrix(sim, env, camera_handle))
+        view_matrix = np.matrix(gym.get_camera_view_matrix(sim, env, camera_handle))
+        print("projection_matrix : \n", proj_matrix, type(proj_matrix))
+        print("view_matrix : \n", view_matrix, type(view_matrix))
+
         cam_angle = camera_states.r.to_euler_zyx()
-        # cam_angle = camera_states.r
         uav_angle = R.from_quat(state_buffer[0][3:7]).as_euler('zyx', degrees=False)
         uav_positions = state_buffer[0][:3]
         car_positions = state_buffer[1][:3]
-        # uav_positions[0], uav_positions[1] = uav_positions[1], uav_positions[0]
-        # car_positions[0], car_positions[1] = car_positions[1], car_positions[0]
-        # print("cam_angle : ", np.rad2deg(cam_angle))
+
         print("uav_angle : ", np.rad2deg(uav_angle))
         print("uav_positions : ", uav_positions)
         print("car_positions : ", car_positions)
-        cam_control.set_params(cam_angle, uav_angle, uav_positions, car_positions, 0, 1)
+        cam_control.set_params(cam_angle, uav_angle, uav_positions, car_positions, 0, view_matrix, proj_matrix, 1)
         print("cam_control camera_matrix : \n", cam_control.camera_matrix)
-        # print("camera_proj_matrix : \n", gym.get_camera_proj_matrix(sim, envs[i], 0))
-        # camera_view_matrix = gym.get_camera_view_matrix(sim, envs[i], 0)
-        # print("camera_view_matrix : \n", camera_view_matrix)
-
 
         pixel_point = cam_control.world2pixel()
         # pixel_point = pixel_point[::-1]
         print("pixel_point : ", pixel_point)
-        # pixel_point[0] = cam_props.width - pixel_point[0]
-        # pixel_point = np.clip(pixel_point[:2], [0, 0], [cam_props.height, cam_props.width])
 
         color_image = gym.get_camera_image(sim, envs[i], camera_handles[i], gymapi.IMAGE_COLOR)
         color_image = color_image.reshape(cam_props.height, cam_props.width, 4)
@@ -471,7 +459,6 @@ while not gym.query_viewer_has_closed(viewer):
         color_image = cv2.merge([b, g, r]) # cv2 读取图片格式为BGR
         cv2.rectangle(color_image, (int(pixel_point[0]-10), int(pixel_point[1]+10)), (int(pixel_point[0]+10), int(pixel_point[1]-10)), (0,255,0), 4)
         cv2.imshow('isaac gym', color_image)
-        # cv2.imshow('isaac gym {}'.format(i), color_image[:,:,::-1])
         cv2.waitKey(1)
     
 gym.destroy_viewer(viewer)
