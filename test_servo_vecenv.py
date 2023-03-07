@@ -16,9 +16,9 @@ import matplotlib.pyplot as plt
 
 from scipy.spatial.transform import Rotation as R
 
-from common.controller5 import CameraController, euler2quaternion, quaternion2euler
-from common.controller5 import cclvf2 as cal_vel
-from common.servo_controller_debug import ServoExtPixelParam, Rect, getCameraMatrix, getSimCameraMatrix, convertPixelToPhy, servoExtPixel
+from common.controller6 import CameraController, euler2quaternion, quaternion2euler
+from common.controller6 import cclvf2 as cal_vel
+from common.secondary_control_vecenv import SecondaryControl
 
 torch.set_printoptions(precision=4, threshold=10, edgeitems=10, linewidth=80, profile=None, sci_mode=False)
 np.set_printoptions(edgeitems=30, infstr='inf', linewidth=4000, nanstr='nan', precision=4, suppress=True, threshold=10, formatter=None)
@@ -240,7 +240,7 @@ for i in range(len(loaded_assets)):
 
 
 # set up the env grid
-num_envs = 1
+num_envs = 5
 envs_per_row = int(math.sqrt(num_envs))
 env_spacing = 20.0
 env_lower = gymapi.Vec3(-env_spacing, -env_spacing, -env_spacing)
@@ -362,15 +362,16 @@ num_bodies = gym.get_asset_rigid_body_count(loaded_assets[0])
 num_image = 0
 move = False#False#
 once = True
-cam_control = CameraController(cam_props)
-servoExtPixelParam = ServoExtPixelParam()
-servoExtPixelParam.width = cam_props.width
-servoExtPixelParam.height = cam_props.height
-servoAngle = [0, 90, 0]
+cam_control = CameraController(cam_props, num_envs)
+servo_control = SecondaryControl(cam_props.width, cam_props.height, num_envs)
 
 fig, axes = plt.subplots(1, 1, figsize=(16, 9))
-cv2.namedWindow("isaac gym", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("isaac gym", cam_props.width, cam_props.height)
+# cv2.namedWindow("isaac gym", cv2.WINDOW_NORMAL)
+# cv2.resizeWindow("isaac gym", cam_props.width, cam_props.height)
+
+state_buffer = gymtorch.wrap_tensor(gym.acquire_actor_root_state_tensor(sim))
+uav_state = state_buffer.view((num_envs, 2, 13))[:,0]
+car_state = state_buffer.view((num_envs, 2, 13))[:,1]
 
 while not gym.query_viewer_has_closed(viewer):
     num_image += 1
@@ -399,8 +400,8 @@ while not gym.query_viewer_has_closed(viewer):
     state_buffer = gymtorch.wrap_tensor(gym.acquire_actor_root_state_tensor(sim))
     # print(f"time : {(gym.get_elapsed_time(sim)-t)*1000} ms")
     # print(f"time2 : {(time.time()-t2)*1000} ms")
-    car_pos_batch = state_buffer[1::2, :3].view(-1, 3)
-    uav_pos_batch = state_buffer[::2, :3].view(-1, 3)
+    car_pos_batch = car_state[:, :3] #state_buffer[1::2, :3].view(-1, 3)
+    uav_pos_batch = uav_state[:, :3] #state_buffer[::2, :3].view(-1, 3)
 
     car_order_vel = cal_vel(car_pos_batch, target_pos=torch.ones_like(car_pos_batch), speed=50, radius=30)
     yaw = torch.atan2(car_order_vel[:,1], car_order_vel[:,0])
@@ -418,35 +419,39 @@ while not gym.query_viewer_has_closed(viewer):
     view_matrix = np.matrix(gym.get_camera_view_matrix(sim, envs[0], camera_handles[0]))
 
     cam_angle = camera_states.r.to_euler_zyx()
-    uav_angle = R.from_quat(state_buffer[0][3:7]).as_euler('zyx', degrees=False)
-    uav_positions = state_buffer[0][:3]
-    car_positions = state_buffer[1][:3]
+    uav_angle = R.from_quat(uav_state[:, 3:7]).as_euler('zyx', degrees=False)
+    uav_matrix = R.from_quat(uav_state[:, 3:7]).as_matrix()
+    # uav_positions = state_buffer[0][:3]
+    # car_positions = state_buffer[1][:3]
 
-    cam_control.set_params(cam_angle, uav_angle, uav_positions, car_positions, 0, view_matrix, proj_matrix, 1)
+    cam_control.set_params(cam_angle, uav_angle, uav_pos_batch, car_pos_batch, uav_matrix, view_matrix, proj_matrix, 1)
 
-    pixel_point = cam_control.world2pixel()
-    print("pixel_point : ", pixel_point)
-    
-    servoExtPixelParam.camAngle = R.from_quat(state_buffer[0, 3:7]).as_matrix()
-    servoExtPixelParam.cameraMatrix = cam_control.camera_matrix
-    servoAngle = servoExtPixel(servoExtPixelParam, cam_props.width/2-pixel_point[0], cam_props.height/2-pixel_point[1])
+    pixel_point = cam_control.world2pixel()[:, :2]
+    print("######### pixel_point : ", pixel_point)
+
+    order_pixel_move = np.array([cam_props.width/2., cam_props.height/2.]) - pixel_point
+    # order_pixel_move = np.array([[0, -10], [0, 10]])
+    servoAngle = servo_control.servo_ext_pixel(cam_control.camera_matrix, uav_matrix, order_pixel_move)
     # servoAngle = servoExtPixel(servoExtPixelParam, 0, -10)
+    servoAngle = servoAngle.reshape(-1, 3)
     print("servoAngle : ", servoAngle)
 
     # yaw = torch.atan2(uav_order_vel[:,1], uav_order_vel[:,0])
-    euler_buffer = torch.zeros(num_envs, 3)
+    euler_buffer = np.zeros([num_envs, 3])
 
-    euler_buffer[:, 0] = np.deg2rad(servoAngle[0])
-    euler_buffer[:, 1] = np.deg2rad(servoAngle[1])
-    euler_buffer[:, 2] = np.deg2rad(servoAngle[2])
+    # euler_buffer[:, 0] = np.deg2rad(0)
+    # euler_buffer[:, 1] = np.deg2rad(90)
+    # euler_buffer[:, 2] = np.deg2rad(0)
+    euler_buffer[:, 0:3] = np.deg2rad(servoAngle)
+
     uav_quat = euler2quaternion(euler_buffer)
 
     print("$$$$$$$$$$$$$ uav_order_vel :\n ", uav_order_vel)
     # print("$$$$$$$$$$$$$ state_buffer :\n ", state_buffer)
     state_buffer[0::2, 3:7] = torch.tensor(uav_quat) #torch.tensor(R.from_euler('xyz', [num_image, 0, 0], degrees=True).as_quat()) # uav quat
-    # state_buffer[0::2, 7:10] = uav_order_vel #torch.tensor([1, 1, 0]) # uav vel
-    # state_buffer[1::2, 3:7] = torch.tensor(car_quat) # car quat
-    # state_buffer[1::2, 7:10] = car_order_vel # car vel
+    state_buffer[0::2, 7:10] = uav_order_vel #torch.tensor([1, 1, 0]) # uav vel
+    state_buffer[1::2, 3:7] = torch.tensor(car_quat) # car quat
+    state_buffer[1::2, 7:10] = car_order_vel # car vel
     # state_buffer[0::2, 9] = 0 # uav vel z
     print(gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(state_buffer)))
 
@@ -457,8 +462,8 @@ while not gym.query_viewer_has_closed(viewer):
         r, g, b, _ = cv2.split(color_image)
         color_image = cv2.merge([b, g, r]) # cv2 读取图片格式为BGR
         try:
-            cv2.rectangle(color_image, (int(pixel_point[0]-10), int(pixel_point[1]+10)), (int(pixel_point[0]+10), int(pixel_point[1]-10)), (0,255,0), 4)
-            cv2.imshow('isaac gym', color_image)
+            cv2.rectangle(color_image, (int(pixel_point[i][0]-10), int(pixel_point[i][1]+10)), (int(pixel_point[i][0]+10), int(pixel_point[i][1]-10)), (0,255,0), 4)
+            cv2.imshow(f'isaac gym {i}', color_image)
             cv2.waitKey(1)
         except:
             pass
