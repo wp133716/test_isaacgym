@@ -10,7 +10,7 @@
       <!-- <origin xyz="0 0 0" rpy="1.5707963267948966 0 1.5707963267948966" /> -->
       <origin xyz="0 0 0" rpy="1.5707963267948966 0 -1.5707963267948966" />
       <geometry>
-        <!-- <mesh filename="/home/user/Downloads/3d_models/rq-1-predator-mae-uav/predator.obj"  scale="2.0 2.0 2.0"/> -->
+        <!-- <mesh filename="/home/user/my_python_test/nvidia_isaac/test_isaacgym/assets/urdf/uav/meshes/m200.obj"  scale="2.0 2.0 2.0"/> -->
         <mesh filename="package://uav/meshes/predator.obj" scale="2.0 2.0 2.0"/>
       </geometry>
       <!-- <material name="slider_mat">
@@ -21,7 +21,7 @@
       <!-- <origin xyz="0 0 0" rpy="1.5707963267948966 0 1.5707963267948966" /> -->
       <origin xyz="0 0 0" rpy="1.5707963267948966 0 -1.5707963267948966" />
       <geometry>
-        <!-- <mesh filename="/home/user/Downloads/3d_models/rq-1-predator-mae-uav/predator.obj" scale="2.0 2.0 2.0"/> -->
+        <!-- <mesh filename="/home/user/my_python_test/nvidia_isaac/test_isaacgym/assets/urdf/uav/meshes/m200.obj" scale="2.0 2.0 2.0"/> -->
         <mesh filename="package://uav/meshes/predator.obj" scale="2.0 2.0 2.0"/>
       </geometry>
     </collision>

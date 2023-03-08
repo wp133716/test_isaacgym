@@ -124,7 +124,7 @@ class CameraController():
         self.num_env = num_env
         self.uav_angle = np.zeros((num_env, 3, 1))
         self.cam_angle = np.zeros((num_env, 3, 1))
-        self.focal_dist = 18 * 0.001 # 焦距
+        self.focal_dist = 18 # 焦距
         self.target_pos_world = np.zeros((num_env, 3, 1))
         self.tra_uav2world = np.zeros((num_env, 3, 1))
         self.tra_cam2uav = np.zeros((num_env, 3, 1))
@@ -133,7 +133,7 @@ class CameraController():
         calculate the camera's internal parameter matrix
         '''
         # 相机传感器尺寸(mm)
-        # self.__sensor_width = 33 #24.5 #50 #7.41 #
+        self.__sensor_width = 36 #24.5 #50 #7.41 #
         # self.__sensor_height = 5.56
         
         # 相机分辨率
@@ -141,15 +141,15 @@ class CameraController():
         self.__height = cam_props.height
         
         # pixel per meter in the x,y axis
-        # self.__width_meter =  self.__sensor_width * 0.001
+        self.__width_meter =  self.__sensor_width * 0.001
         # self.__height_meter =  self.__sensor_height * 0.001
         
-        # self.__alpha = self.__width / self.__width_meter
+        self.__alpha = self.__width / self.__width_meter
         # self.__beta = self.__height / self.__height_meter
         self.__u0 = self.__width/2
         self.__v0 = self.__height/2
 
-        # self.__fx = self.__alpha * self.focal_dist * 0.001
+        self.__fx = self.__alpha * self.focal_dist * 0.001
         # self.__fy = self.__fx #self.__beta * self.focal_dist * 0.001
 
         self.__fx = cam_props.width / 2
@@ -175,11 +175,11 @@ class CameraController():
         self.view_matrix = np.asarray(view_matrix)
         self.projection_matrix = np.asarray(projection_matrix)
 
-        # self.focal_dist = zoom * 18 * 0.001
+        self.focal_dist = zoom * 18
 
-        # self.__fx = self.__alpha * self.focal_dist
+        self.__fx = self.__alpha * self.focal_dist * 0.001
         # self.__fy = self.__fx #self.__beta * self.focal_dist
-        self.__fx = self.projection_matrix[0, 0] * self.__width / 2
+        # self.__fx = self.projection_matrix[0, 0] * self.__width / 2
         self.__fy = self.__fx
         self.camera_matrix = np.asarray([[self.__fx, 0.,       self.__u0],
                                           [0.,       self.__fy, self.__v0],
