@@ -160,7 +160,7 @@ gym.add_ground(sim, plane_params)
 print("Working directory: %s" % os.getcwd())
 
 # Path where assets are searched, relative to the current working directory
-asset_root = "assets"
+asset_root = "../assets"
 
 # List of assets that will be loaded, both URDF and MJCF files are supported
 asset_files = ["urdf/uav/urdf/rq-1-predator-mae-uav.urdf",
@@ -224,7 +224,7 @@ for i in range(num_envs):
     for j in range(len(loaded_assets)):
         pose.p = gymapi.Vec3(0.0, j*10, height)
         # pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
-        pose.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(1, 0, 0), 0.5 * math.pi)
+        # pose.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(1, 0, 0), 0.5 * math.pi)
         actor_handle = gym.create_actor(env, loaded_assets[j], pose, asset_names[j]+str(i), -1, -1)
         actor_handles[i].append(actor_handle)
 
