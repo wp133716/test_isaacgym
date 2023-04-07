@@ -163,7 +163,7 @@ gym.add_ground(sim, plane_params)
 print("Working directory: %s" % os.getcwd())
 
 # Path where assets are searched, relative to the current working directory
-asset_root = "assets"
+asset_root = "../assets"
 
 # List of assets that will be loaded, both URDF and MJCF files are supported
 asset_files = ["urdf/uav/urdf/rq-1-predator-mae-uav.urdf",

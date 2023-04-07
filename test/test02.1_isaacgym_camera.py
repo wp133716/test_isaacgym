@@ -132,10 +132,18 @@ def init_sim_params():
 
     return sim_params
 
-def update_camera(gym, sim, camera_handle):
-    gym.destroy_camera_sensor(sim, camera_handle)
+def update_camera(gym, sim, env, camera_handle):
+    gym.destroy_camera_sensor(sim, env, camera_handle)
+    # create camera sensor
+    camera_props = gymapi.CameraProperties()
+    camera_props.width = 640
+    camera_props.height = 480
+    camera_props.horizontal_fov = 60.0
+    camera_handle = gym.create_camera_sensor(env, camera_props)
 
-    return
+    return camera_handle
+
+
 gym = gymapi.acquire_gym()
 
 sim_params = init_sim_params()
@@ -274,18 +282,21 @@ for i in range(num_envs):
     car_actor_handles.append(car_actor_handle)
 
     # create camera actor
-    camera_handle = gym.create_camera_sensor(env, cam_props)
-    camera_handles.append(camera_handle)
-    body = gym.get_actor_rigid_body_handle(env, uav_actor_handle, 0)
-    # print("-----------body : ", body)
-    # transform = gymapi.Transform()
-    # transform.p = gymapi.Vec3(0, 0, 0)
-    # transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(45.0))
-    # gym.set_camera_transform(camera_handle, env, transform)
-    local_transform = gymapi.Transform()
-    local_transform.p = gymapi.Vec3(0, -2.5, 0)
-    local_transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(90.0))
-    gym.attach_camera_to_body(camera_handle, env, body, local_transform, gymapi.FOLLOW_TRANSFORM)
+    # horizontal_fov = np.linspace(1, 90, 300)
+    for j in range(1):
+        cam_props.horizontal_fov = 100-j
+        camera_handle = gym.create_camera_sensor(env, cam_props)
+        camera_handles.append(camera_handle)
+        body = gym.get_actor_rigid_body_handle(env, uav_actor_handle, 0)
+        # print("-----------body : ", body)
+        # transform = gymapi.Transform()
+        # transform.p = gymapi.Vec3(0, 0, 0)
+        # transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(45.0))
+        # gym.set_camera_transform(camera_handle, env, transform)
+        local_transform = gymapi.Transform()
+        local_transform.p = gymapi.Vec3(0, -2.5, 0)
+        local_transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(90.0))
+        gym.attach_camera_to_body(camera_handle, env, body, local_transform, gymapi.FOLLOW_TRANSFORM)
 
 # position viewer camera
 # gym.viewer_camera_look_at(viewer, None, cam_pos, cam_target)
@@ -337,15 +348,30 @@ while not gym.query_viewer_has_closed(viewer):
         l_color = gymapi.Vec3(random.uniform(1, 1), random.uniform(1, 1), random.uniform(1, 1))
         l_ambient = gymapi.Vec3(random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
         l_direction = gymapi.Vec3(random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1))
-        # gym.set_light_parameters(sim, 0, l_color, l_ambient, l_direction)
+        gym.set_light_parameters(sim, 0, l_color, l_ambient, l_direction)
 
         #### gym.set_sensor_properties(sim, 0, camera_handle, gymapi.CameraProperties(fov=gymapi.Deg2Rad(20))) ## chatGPT gengrate
         # gym.write_camera_image_to_file(sim, envs[i], camera_handles[i], gymapi.IMAGE_COLOR, "images/image_"+str(num_image)+".png")
-        color_image = gym.get_camera_image(sim, envs[i], camera_handles[i], gymapi.IMAGE_COLOR)
+        print("camera_handles : ", camera_handles[i])
+        color_image = gym.get_camera_image(sim, envs[i], camera_handles[0], gymapi.IMAGE_COLOR)
         # print(color_image, color_image.shape)
         cv2.imshow('isaac gym {}'.format(i),color_image.reshape(cam_props.height, cam_props.width, 4))
         cv2.waitKey(1)
-    update_camera(gym, sim, camera_handles[0])
+
+        # gym.destroy_camera_sensor(sim, envs[i], camera_handles[i])
+        # camera_props = gymapi.CameraProperties()
+        # camera_props.horizontal_fov = (np.random.uniform(20, 90))
+        # camera_handle = gym.create_camera_sensor(env, camera_props)
+        # camera_handles[i] = camera_handle
+        # local_transform = gymapi.Transform()
+        # local_transform.p = gymapi.Vec3(0, -2.5, 0)
+        # local_transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,1,0), np.radians(90.0))
+        # body = gym.get_actor_rigid_body_handle(env, uav_actor_handles[i], 0)
+        # gym.attach_camera_to_body(camera_handle, env, body, local_transform, gymapi.FOLLOW_TRANSFORM)
+
+
+    # handle = update_camera(gym, sim, envs[0], camera_handles[0])
+    # print("handle : ", handle)
 
 
 gym.destroy_viewer(viewer)
