@@ -186,7 +186,7 @@ while not gym.query_viewer_has_closed(viewer):
     rigid_body_state[1][3:7] = torch.tensor(camera_rot_yaw)
     rigid_body_state[2][3:7] = torch.tensor(camera_rot_pitch)
     # gym.set_rigid_body_state_tensor(sim, gymtorch.unwrap_tensor(rigid_body_state))
-    # gym.set_dof_position_target_tensor(sim, gymtorch.wrap_tensor(dof_positions))
+    # gym.set_dof_position_target_tensor(sim, gymtorch.unwrap_tensor(dof_positions))
     actor_root_state[0][3:7] = torch.tensor(actor_quat)
     # gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(actor_root_state))
 
