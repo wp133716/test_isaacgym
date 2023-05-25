@@ -16,11 +16,14 @@ import math
 import numpy as np
 from isaacgym import gymapi, gymutil
 from isaacgym import gymtorch
+import torch
 
 from scipy.spatial.transform import Rotation as R
 import time
 
-
+# 设置torch打印格式，保留5位小数，不用科学计数法
+torch.set_printoptions(precision=3, sci_mode=False)
+np.set_printoptions(precision=3, suppress=True)
 
 def clamp(x, min_value, max_value):
     return max(min(x, max_value), min_value)
@@ -249,6 +252,16 @@ def quat2expcoord(q):
 # Helper visualization for goal orientation
 axes_geom = gymutil.AxesGeometry(0.5)
 
+dof_state_buffer = gymtorch.wrap_tensor(gym.acquire_dof_state_tensor(sim))
+dof_force_buffer = gymtorch.wrap_tensor(gym.acquire_dof_force_tensor(sim))
+gym.refresh_dof_state_tensor(sim)
+gym.refresh_actor_root_state_tensor(sim)
+gym.refresh_rigid_body_state_tensor(sim)
+dof_pos_buffer = dof_state_buffer.view(num_envs, num_dofs, 2)[..., 0]
+dof_vel_buffer = dof_state_buffer.view(num_envs, num_dofs, 2)[..., 1]
+
+default_dof_pos = torch.zeros_like(dof_pos_buffer)
+
 cnt = 0
 while not gym.query_viewer_has_closed(viewer):
 
@@ -256,13 +269,21 @@ while not gym.query_viewer_has_closed(viewer):
     gym.simulate(sim)
     gym.fetch_results(sim, True)
 
+    gym.refresh_dof_state_tensor(sim)
+    gym.refresh_actor_root_state_tensor(sim)
+    gym.refresh_rigid_body_state_tensor(sim)
+
     # Set new goal orientation
     if cnt % 1 == 0:
         goal_quat = random_quaternion()
-        # euler = [cnt, 0, 0]
-        # euler = [0, cnt, 0]
-        # euler = [0, 0, cnt]
-        euler = [cnt, cnt, cnt]
+
+        roll = np.clip(cnt%180-90, -90, 90)
+        pitch = np.clip(cnt%180, 0, 120)
+        yaw = np.clip(cnt%360-180, -180, 180)
+        # euler = [roll, 0, 0]
+        # euler = [0, pitch, 0]
+        euler = [0, 0, yaw]
+        # euler = [roll, pitch, yaw]
         goal_quat = R.from_euler('xyz', euler, degrees=True).as_quat()
 
         print("New goal orientation:", goal_quat)
@@ -282,15 +303,17 @@ while not gym.query_viewer_has_closed(viewer):
         # dof_velocities[5] = 10.0
         print("New goal DOF vel:", dof_states['vel'])
 
-        gym.get_actor_dof_position_targets(sim)
+        default_dof_pos[0] = torch.tensor(dof_positions) 
+        print("New goal DOF positions:", dof_pos_buffer[:, 5])
+        print("New goal DOF positions:", dof_positions[5])
+        print("New goal DOF positions:", dof_pos_buffer)
+        gym.set_dof_position_target_tensor(sim, gymtorch.unwrap_tensor(default_dof_pos))
 
-        for i in range(num_envs):
-            if props["driveMode"][0]==gymapi.DOF_MODE_POS:
-                gym.set_actor_dof_position_targets(envs[i], actor_handles[i], dof_positions)
-                gym.set_dof_position_target_tensor(sim, gymtorch.wrap_tensor(dof_positions))
-            # elif props["driveMode"][0]==gymapi.DOF_MODE_VEL:
-            #     gym.set_actor_dof_velocity_targets(envs[i], actor_handles[i], dof_velocities)
-        # gym.set_dof_position_target_tensor(sim, gymtorch.wrap_tensor(dof_positions))
+        # for i in range(num_envs):
+        #     if props["driveMode"][0]==gymapi.DOF_MODE_POS:
+        #         gym.set_actor_dof_position_targets(envs[i], actor_handles[i], dof_positions)
+        #     elif props["driveMode"][0]==gymapi.DOF_MODE_VEL:
+        #         gym.set_actor_dof_velocity_targets(envs[i], actor_handles[i], dof_velocities)
 
     # update the viewer
     gym.step_graphics(sim)
