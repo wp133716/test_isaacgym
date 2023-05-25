@@ -196,8 +196,10 @@ while not gym.query_viewer_has_closed(viewer):
     color_image = gym.get_camera_image(sim, env, camera_handle, gymapi.IMAGE_COLOR)
     color_image = color_image.reshape(cam_props.height, cam_props.width, 4)
     
-    r, g, b, _ = cv2.split(color_image)
-    color_image = cv2.merge([b, g, r]) # cv2 读取图片格式为BGR
+    # r, g, b, _ = cv2.split(color_image)
+    # color_image = cv2.merge([b, g, r]) # cv2 读取图片格式为BGR
+    color_image = cv2.cvtColor(color_image, cv2.COLOR_RGBA2BGRA)
+
     # cv2.imshow('isaac gym', color_image)
     # cv2.imshow('isaac gym {}'.format(i), color_image[:,:,::-1])
     cv2.waitKey(100)
