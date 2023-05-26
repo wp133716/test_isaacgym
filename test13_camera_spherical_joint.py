@@ -19,8 +19,8 @@ from isaacgym import gymtorch
 
 from scipy.spatial.transform import Rotation as R
 import time
-
-
+import torch
+import cv2
 
 def clamp(x, min_value, max_value):
     return max(min(x, max_value), min_value)
@@ -170,14 +170,15 @@ spacing = 2.5
 env_lower = gymapi.Vec3(-spacing, 0.0, -spacing)
 env_upper = gymapi.Vec3(spacing, spacing, spacing)
 
-# position the camera
-cam_pos = gymapi.Vec3(1.0, 1.0, 1)
+# position the view camera
+cam_pos = gymapi.Vec3(2.0, -2.0, 2.0)
 cam_target = gymapi.Vec3(0, 0, 1)
 gym.viewer_camera_look_at(viewer, None, cam_pos, cam_target)
 
 # cache useful handles
 envs = []
 actor_handles = []
+camera_handles = []
 
 print("Creating %d environments" % num_envs)
 for i in range(num_envs):
@@ -196,15 +197,27 @@ for i in range(num_envs):
     props = gym.get_actor_dof_properties(env, actor_handle)
     props["driveMode"] = (gymapi.DOF_MODE_POS, gymapi.DOF_MODE_POS, gymapi.DOF_MODE_POS, gymapi.DOF_MODE_POS, gymapi.DOF_MODE_POS, gymapi.DOF_MODE_POS)
     # props["driveMode"] = (gymapi.DOF_MODE_VEL, gymapi.DOF_MODE_VEL, gymapi.DOF_MODE_VEL, gymapi.DOF_MODE_VEL, gymapi.DOF_MODE_VEL, gymapi.DOF_MODE_VEL)
-    props["stiffness"] = (50.0, 50.0, 50.0, 50.0, 50.0, 50.0)
-    # props["damping"] = (10.0, 10.0, 10.0, 100.0, 100.0, 100.0)
-    # props["damping"] = (10.0, 10.0, 10.0, 1000.0, 1000.0, 1000.0)
-    props["damping"] = (5, 5, 5, 5, 5, 5)
+    props["stiffness"] = (50.0, 50.0, 50.0, 50.0, 50.0, 50.0) # 刚度
+    # props["damping"] = (10.0, 10.0, 10.0, 100.0, 100.0, 100.0) # 阻尼
+    # props["damping"] = (10.0, 10.0, 10.0, 1000.0, 1000.0, 1000.0) # 阻尼
+    props["damping"] = (5000, 5000, 5000, 5, 5, 5) # 阻尼
 
     gym.set_actor_dof_properties(env, actor_handle, props)
 
     # set default DOF positions
     gym.set_actor_dof_states(env, actor_handle, dof_states, gymapi.STATE_ALL)
+
+    # create camera actor
+    cam_props = gymapi.CameraProperties()
+
+    camera_handle = gym.create_camera_sensor(env, cam_props)
+    camera_handles.append(camera_handle)
+    body = gym.get_actor_rigid_body_handle(env, actor_handle, 4)
+
+    local_transform = gymapi.Transform()
+    local_transform.p = gymapi.Vec3(0.1, 0, 0) # actor_handle
+    local_transform.r = gymapi.Quat.from_euler_zyx(0, 0, 0)
+    gym.attach_camera_to_body(camera_handle, env, body, local_transform, gymapi.FOLLOW_TRANSFORM) # gymapi.FOLLOW_TRANSFORM
 
 
 def random_quaternion():
@@ -249,6 +262,12 @@ def quat2expcoord(q):
 # Helper visualization for goal orientation
 axes_geom = gymutil.AxesGeometry(0.5)
 
+# get dof state tensor
+_dof_states_tensor = gym.acquire_dof_state_tensor(sim)
+dof_states_tensor = gymtorch.wrap_tensor(_dof_states_tensor)
+dof_pos = dof_states_tensor[:, 0].view(num_envs, 6, 1)
+dof_vel = dof_states_tensor[:, 1].view(num_envs, 6, 1)
+
 cnt = 0
 while not gym.query_viewer_has_closed(viewer):
 
@@ -256,21 +275,24 @@ while not gym.query_viewer_has_closed(viewer):
     gym.simulate(sim)
     gym.fetch_results(sim, True)
 
+    # render camera sensor
+    gym.render_all_camera_sensors(sim)
+
     # Set new goal orientation
     if cnt % 1 == 0:
-        goal_quat = random_quaternion()
+        # goal_quat = random_quaternion()
         # euler = [cnt, 0, 0]
-        # euler = [0, cnt, 0]
+        euler = [0, cnt, 0]
         # euler = [0, 0, cnt]
-        euler = [cnt, cnt, cnt]
+        # euler = [cnt, cnt, cnt]
+        # euler = [0, 0, 0]
         goal_quat = R.from_euler('xyz', euler, degrees=True).as_quat()
-
         print("New goal orientation:", goal_quat)
 
         gym.clear_lines(viewer)
 
         goal_viz_T = gymapi.Transform(r=gymapi.Quat(*goal_quat), p=gymapi.Vec3(0, 0, 1.0))
-        gymutil.draw_lines(axes_geom, gym, viewer, env, goal_viz_T)
+        # gymutil.draw_lines(axes_geom, gym, viewer, env, goal_viz_T)
 
         dof_positions[:] = 0.0
         dof_positions[3:] = quat2expcoord(goal_quat)
@@ -282,15 +304,26 @@ while not gym.query_viewer_has_closed(viewer):
         # dof_velocities[5] = 10.0
         print("New goal DOF vel:", dof_states['vel'])
 
-        gym.get_actor_dof_position_targets(sim)
+        # gym.get_actor_dof_position_targets(sim)
 
         for i in range(num_envs):
-            if props["driveMode"][0]==gymapi.DOF_MODE_POS:
-                gym.set_actor_dof_position_targets(envs[i], actor_handles[i], dof_positions)
-                gym.set_dof_position_target_tensor(sim, gymtorch.wrap_tensor(dof_positions))
+            # if props["driveMode"][0]==gymapi.DOF_MODE_POS:
+            #     gym.set_actor_dof_position_targets(envs[i], actor_handles[i], dof_positions)
+            #     # gym.set_dof_position_target_tensor(sim, gymtorch.wrap_tensor(dof_positions))
             # elif props["driveMode"][0]==gymapi.DOF_MODE_VEL:
             #     gym.set_actor_dof_velocity_targets(envs[i], actor_handles[i], dof_velocities)
-        # gym.set_dof_position_target_tensor(sim, gymtorch.wrap_tensor(dof_positions))
+
+            color_image = gym.get_camera_image(sim, envs[i], camera_handles[i], gymapi.IMAGE_COLOR)
+            color_image = color_image.reshape(cam_props.height, cam_props.width, 4)
+
+            color_image = cv2.cvtColor(color_image, cv2.COLOR_RGBA2BGRA)
+            # cv2.rectangle(color_image, (int(pixel_point[0]-10), int(pixel_point[1]+10)), (int(pixel_point[0]+10), int(pixel_point[1]-10)), (0,255,0), 4)
+            cv2.imshow('isaac gym', color_image)
+            cv2.waitKey(1)
+        
+        print('dof_pos : ', dof_pos)
+        dof_pos = torch.from_numpy(dof_positions).unsqueeze(0).repeat(num_envs, 1, 1)
+        # gym.set_dof_position_target_tensor(sim, gymtorch.unwrap_tensor(dof_pos))
 
     # update the viewer
     gym.step_graphics(sim)
