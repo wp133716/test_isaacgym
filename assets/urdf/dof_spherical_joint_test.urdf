@@ -1,55 +1,93 @@
 <?xml version="1.0"?>
 <robot name="spherical_joint_robot">
-  <link name="base_link" />
+  <!-- <link name="base_link" /> -->
   <link name="translation_x" />
   <link name="translation_y" />
   <link name="translation_z" />
 
-  <link name="object">
+  <link name="predator">
+    <inertial>
+      <origin xyz="0 0 0" />
+      <mass value="100" />
+      <!-- <inertia  ixx="1.0" ixy="0.0"  ixz="0.0"  iyy="1.0"  iyz="0.0"  izz="1.0" /> -->
+    </inertial>
     <visual>
-      <origin xyz="0 0 0"/>
+      <!-- <origin xyz="0 0 0" rpy="1.5707963267948966 0 1.5707963267948966" /> -->
+      <origin xyz="0 0 0" rpy="1.5707963267948966 0 -1.5707963267948966" />
       <geometry>
-        <box size="0.05 0.2 0.5"/>
+        <!-- <mesh filename="/home/user/Downloads/3d_models/rq-1-predator-mae-uav/predatorwithoutsphere.obj"  scale="2.0 2.0 2.0"/> -->
+        <mesh filename="package://assets/urdf/uav/meshes/predator_without_sphere.obj" scale="2.0 2.0 2.0"/>
+        <!-- <mesh filename="package://assets/urdf/uav/meshes/predator.obj" scale="2.0 2.0 2.0"/> -->
+      </geometry>
+      <!-- <material name="slider_mat">
+        <color rgba="0.9 0.6 0.2 1"/>
+      </material> -->
+    </visual>
+    <collision>
+      <!-- <origin xyz="0 0 0" rpy="1.5707963267948966 0 1.5707963267948966" /> -->
+      <origin xyz="0 0 0" rpy="1.5707963267948966 0 -1.5707963267948966" />
+      <geometry>
+        <!-- <mesh filename="/home/user/Downloads/3d_models/rq-1-predator-mae-uav/predatorwithoutsphere.obj" scale="2.0 2.0 2.0"/> -->
+        <mesh filename="package://assets/urdf/uav/meshes/predator_without_sphere.obj" scale="2.0 2.0 2.0"/>
+        <!-- <mesh filename="package://assets/urdf/uav/meshes/predator.obj" scale="2.0 2.0 2.0"/> -->
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="sphere">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 3.14 1.57"/>
+      <geometry>
+        <!-- <box size="0.05 0.2 0.5"/> -->
+        <!-- <mesh filename="/home/user/my_python_test/nvidia_isaac/test_isaacgym/assets/urdf/uav/meshes/sphere.obj" scale="0.25 0.25 0.25"/> -->
+        <mesh filename="package://assets/urdf/uav/meshes/sphere.obj" scale="2.0 2.0 2.0"/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 3.14 1.57"/>
       <geometry>
-        <box size="0.05 0.2 0.5"/>
+        <!-- <box size="0.05 0.2 0.5"/> -->
+        <!-- <mesh filename="/home/user/my_python_test/nvidia_isaac/test_isaacgym/assets/urdf/uav/meshes/sphere.obj" scale="0.25 0.25 0.25"/> -->
+        <mesh filename="package://assets/urdf/uav/meshes/sphere.obj" scale="2.0 2.0 2.0"/>
       </geometry>
     </collision>
+    <!-- 球体的inertial -->
+    <!-- <inertia ixx="${2*m*r*r/5}" ixy="0" ixz="0"
+                iyy="${2*m*r*r/5}" iyz="0" 
+                izz="${2*m*r*r/5}" />
+    </inertial> -->
      <inertial>
-      <mass value="0.5"/>
+      <mass value="5"/>
       <inertia ixx="0.05" ixy="0.0" ixz="0.0" iyy="0.05" iyz="0.0" izz="0.05"/>
     </inertial>
   </link>
   
   <joint name="prismatic_joint_x" type="prismatic">
     <axis xyz="1 0 0"/>
-    <origin xyz="0 0 0"/>
-    <parent link="base_link"/>
+    <origin xyz="2.17672 0 -0.119422"/>
+    <parent link="predator"/>
     <child link="translation_x"/>
-    <limit effort="1000.0" lower="-2" upper="2" velocity="100"/>
+    <limit effort="1.0" lower="-2" upper="2" velocity="0.1"/>
   </joint>
   <joint name="prismatic_joint_y" type="prismatic">
     <axis xyz="0 1 0"/>
     <origin xyz="0 0 0"/>
     <parent link="translation_x"/>
     <child link="translation_y"/>
-    <limit effort="1000.0" lower="-2" upper="2" velocity="100"/>
+    <limit effort="1.0" lower="-2" upper="2" velocity="0.1"/>
   </joint>
   <joint name="prismatic_joint_z" type="prismatic">
     <axis xyz="0 0 1"/>
     <origin xyz="0 0 0"/>
     <parent link="translation_y"/>
     <child link="translation_z"/>
-    <limit effort="1000.0" lower="-2" upper="2" velocity="100"/>
+    <limit effort="1.0" lower="-2" upper="2" velocity="0.1"/>
   </joint>
 
   <joint name="spherical_joint" type="spherical">
     <origin xyz="0 0 0"/>
     <parent link="translation_z"/>
-    <child link="object"/>
+    <child link="sphere"/>
     <limit effort="1000.0" lower="-4" upper="4" velocity="100"/>
   </joint>
 
